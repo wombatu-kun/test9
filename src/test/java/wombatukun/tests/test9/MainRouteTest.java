@@ -4,6 +4,7 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.PropertyInject;
+import org.apache.camel.builder.NotifyBuilder;
 import org.apache.camel.cdi.Uri;
 import org.apache.camel.test.cdi.CamelCdiRunner;
 import org.junit.Before;
@@ -18,12 +19,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.apache.camel.test.junit4.TestSupport.deleteDirectory;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 @RunWith(CamelCdiRunner.class)
 public class MainRouteTest {
@@ -47,9 +48,10 @@ public class MainRouteTest {
 	}
 
 	@Test
-	public void testOk() throws Exception {
+	public void testOk() {
+		NotifyBuilder notifier = createNotifier();
 		template.sendBodyAndHeader("Hello World", Exchange.FILE_NAME, "hello.txt");
-		Thread.sleep(1000);
+		assertTrue(wasProcessed(notifier));
 
 		List<String> names = getOutputNames();
 		assertEquals(1, names.size());
@@ -62,17 +64,19 @@ public class MainRouteTest {
 	}
 
 	@Test
-	public void testNonTxt() throws Exception {
+	public void testNonTxt() {
+		NotifyBuilder notifier = createNotifier();
 		template.sendBodyAndHeader("kek", Exchange.FILE_NAME, "deep_throat_9.avi");
-		Thread.sleep(1000);
+		assertFalse(wasProcessed(notifier));
 		List<String> names = getOutputNames();
 		assertEquals(0, names.size());
 	}
 
 	@Test
-	public void testEmptyFile() throws Exception {
+	public void testEmptyFile() {
+		NotifyBuilder notifier = createNotifier();
 		template.sendBodyAndHeader("", Exchange.FILE_NAME, "empty.txt");
-		Thread.sleep(1000);
+		assertTrue(wasProcessed(notifier));
 
 		List<String> names = getOutputNames();
 		assertEquals(1, names.size());
@@ -85,9 +89,10 @@ public class MainRouteTest {
 	}
 
 	@Test
-	public void testFileWithoutLetters() throws Exception {
+	public void testFileWithoutLetters() {
+		NotifyBuilder notifier = createNotifier();
 		template.sendBodyAndHeader("132!", Exchange.FILE_NAME, "no_letters.txt");
-		Thread.sleep(1000);
+		assertTrue(wasProcessed(notifier));
 
 		List<String> names = getOutputNames();
 		assertEquals(1, names.size());
@@ -97,6 +102,14 @@ public class MainRouteTest {
 
 		String content = context.getTypeConverter().convertTo(String.class, target);
 		assertEquals("words=1", content);
+	}
+
+	private NotifyBuilder createNotifier() {
+		return new NotifyBuilder(context).wereSentTo("file:" + output + "*").whenDone(1).create();
+	}
+
+	private boolean wasProcessed(NotifyBuilder notifier) {
+		return notifier.matches(3, TimeUnit.SECONDS);
 	}
 
 	private List<String> getOutputNames() {
